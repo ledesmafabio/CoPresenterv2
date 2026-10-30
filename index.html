@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Copresentar</title>
+  <meta name="description" content="Presentá un PDF y compartí un enlace para que otra persona controle las diapositivas en tiempo real.">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect x='8' y='18' width='84' height='56' rx='8' fill='%232563eb'/><path d='M42 34l20 12-20 12z' fill='white'/><rect x='30' y='80' width='40' height='6' rx='3' fill='%232563eb'/></svg>">
+  <link rel="stylesheet" href="css/estilos.css">
+  <script type="module" src="js/app.js"></script>
+</head>
+<body>
+
+<!-- ============================ INICIO ============================ -->
+<section id="inicio" class="vista" hidden>
+  <main class="tarjeta">
+    <h1>Copresentar</h1>
+    <p class="sub">Presentá tus diapositivas y compartí un enlace: tu colega puede avanzar y retroceder desde su compu o su celular, en tiempo real, mientras vos compartís la pantalla en Zoom o Meet.</p>
+
+    <div id="aviso-reanudar" class="aviso" hidden></div>
+
+    <label class="campo">Tu nombre
+      <input id="nombre-pres" type="text" maxlength="40" placeholder="Ej.: Fabio" autocomplete="name">
+    </label>
+
+    <label id="zona" class="zona" tabindex="0">
+      <input id="archivo" type="file" accept=".pdf,application/pdf,.pptx,.ppt" hidden>
+      <span class="zona-icono" aria-hidden="true">⬆</span>
+      <strong>Elegí o arrastrá el PDF de la presentación</strong>
+      <span class="zona-nota">El archivo no se sube a ningún lado: se abre solo en tu navegador.</span>
+    </label>
+    <p id="error-archivo" class="error" role="alert" hidden></p>
+
+    <details class="ayuda">
+      <summary>Tengo un PowerPoint, ¿cómo lo paso a PDF?</summary>
+      <ul>
+        <li><b>PowerPoint (Windows/Mac):</b> Archivo → Exportar → Crear documento PDF/XPS (o “Guardar como” → PDF).</li>
+        <li><b>Google Slides:</b> Archivo → Descargar → Documento PDF.</li>
+        <li><b>Canva:</b> Compartir → Descargar → PDF estándar.</li>
+      </ul>
+      <p>Cada diapositiva queda como una página. Las animaciones internas de una diapositiva no se conservan; si las necesitás, duplicá la diapositiva con cada paso antes de exportar.</p>
+    </details>
+
+    <details class="ayuda">
+      <summary>¿Cómo se usa en el congreso?</summary>
+      <ol>
+        <li>Quien comparte pantalla abre esta página, carga el PDF y copia el <b>enlace de control</b>.</li>
+        <li>Le pasa ese enlace al colega (por WhatsApp o el chat de la reunión).</li>
+        <li>En Zoom: <i>Compartir pantalla</i> → elegir la ventana del navegador. En Meet: <i>Presentar</i> → <i>Una pestaña</i> → esta pestaña.</li>
+        <li>Pulsá <kbd>F</kbd> para pantalla completa. Cualquiera de los dos avanza con los botones o las flechas del teclado.</li>
+      </ol>
+      <p>Tip: el presentador también puede abrir el enlace de control en su celular para usarlo como control remoto.</p>
+    </details>
+  </main>
+  <footer class="pie">Funciona con conexiones públicas gratuitas (MQTT y ntfy). Cualquiera con el enlace puede controlar las diapositivas: compartilo solo con tu copresentador.</footer>
+</section>
+
+<!-- ============================ PRESENTADOR ============================ -->
+<section id="presentador" class="vista" hidden>
+  <div id="escenario"><canvas id="lienzo" aria-label="Diapositiva actual"></canvas></div>
+  <div id="negro" hidden></div>
+
+  <header id="barra">
+    <button id="p-ant" title="Anterior (←)" aria-label="Anterior">◀</button>
+    <span id="p-num">1 / 1</span>
+    <button id="p-sig" title="Siguiente (→)" aria-label="Siguiente">▶</button>
+    <span class="sep"></span>
+    <button id="p-copiar" class="texto">Copiar enlace de control</button>
+    <span id="p-colabs" class="estado apagado">Nadie más conectado</span>
+    <span id="p-red" class="red">Conectando…</span>
+    <span class="sep"></span>
+    <button id="p-full" title="Pantalla completa (F)" aria-label="Pantalla completa">⛶</button>
+    <button id="p-salir" title="Salir" aria-label="Salir">✕</button>
+  </header>
+
+  <dialog id="dlg-enlace">
+    <h2>Listo para presentar</h2>
+    <p>Pasale este enlace a tu colega. Desde ahí va a poder avanzar y retroceder las diapositivas con vos:</p>
+    <div class="fila-enlace">
+      <input id="dlg-url" type="text" readonly onclick="this.select()">
+      <button id="dlg-copiar" class="primario">Copiar</button>
+    </div>
+    <ul class="atajos">
+      <li><kbd>→</kbd> <kbd>←</kbd> avanzar / retroceder · <kbd>F</kbd> pantalla completa · <kbd>B</kbd> pantalla negra</li>
+      <li>La barra de arriba se esconde sola a los 2 segundos para que no se vea en la pantalla compartida.</li>
+      <li>Si recargás la página, volvé a cargar el mismo PDF: el enlace sigue siendo válido.</li>
+    </ul>
+    <div class="acciones"><button id="dlg-cerrar" class="primario">Empezar</button></div>
+  </dialog>
+</section>
+
+<!-- ============================ CONTROL REMOTO ============================ -->
+<section id="control" class="vista" hidden>
+  <header class="c-cab">
+    <strong>Control remoto</strong>
+    <span id="c-estado" class="c-estado espera">Buscando al presentador…</span>
+    <input id="nombre-ctrl" class="c-nombre" type="text" maxlength="40" placeholder="Tu nombre" aria-label="Tu nombre" autocomplete="name">
+    <span id="c-red" class="red">Conectando…</span>
+    <button id="c-full" class="icono" title="Pantalla completa (F)" aria-label="Pantalla completa">⛶</button>
+  </header>
+
+  <div id="c-escenario" class="c-escenario">
+    <canvas id="c-lienzo" aria-label="Diapositiva actual"></canvas>
+    <button id="c-zona-ant" class="c-zona izq" tabindex="-1" aria-hidden="true"></button>
+    <button id="c-zona-sig" class="c-zona der" tabindex="-1" aria-hidden="true"></button>
+    <div id="c-sinpdf">
+      <div id="c-num-grande" class="c-num-grande">– / –</div>
+      <p>Para ver las diapositivas acá, en grande, cargá el mismo PDF que usa el presentador.</p>
+      <button id="c-cargar" class="primario">Cargar el PDF</button>
+      <p class="c-nota">Es opcional: sin el PDF igual podés pasar las diapositivas y verlas en Zoom o Meet.</p>
+      <input id="c-archivo" type="file" accept=".pdf,application/pdf" hidden>
+    </div>
+  </div>
+
+  <footer class="c-pie">
+    <button id="c-ant" class="grande" disabled aria-label="Anterior">◀<span class="txt"> Anterior</span></button>
+    <div class="c-centro">
+      <select id="c-ir" aria-label="Ir a la diapositiva"></select>
+      <div id="c-num" class="c-num" aria-live="polite">– / –</div>
+    </div>
+    <div id="c-siguiente" class="c-siguiente" hidden title="Siguiente diapositiva"><canvas id="c-lienzo2"></canvas></div>
+    <button id="c-sig" class="grande primario" disabled aria-label="Siguiente"><span class="txt">Siguiente </span>▶</button>
+  </footer>
+</section>
+
+<noscript><p style="padding:2rem">Esta página necesita JavaScript.</p></noscript>
+</body>
+</html>
